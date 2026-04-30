@@ -18,6 +18,8 @@ namespace SimplePaint
         private ToolType currentTool= ToolType.Line;  // 현재선택된도형
         private Color currentColor = Color.Black;      // 현재색상
         private int currentLineWidth = 2;              // 현재선두께
+        private float zoomFactor = 1.0f;               // 확대/축소 배율
+        private Panel panelCanvas;                     // 스크롤용 패널
 
         public Form1()
         {
@@ -54,17 +56,77 @@ namespace SimplePaint
 
             // 파일 저장 버튼 이벤트 연결
             btnSaveFile.Click += btnSaveFile_Click;
+
+            // 파일 열기 이벤트 연결
+            btnOpenFile.Click += btnOpenFile_Click;
+
+            // 줌 및 스크롤을 위한 패널 설정
+            panelCanvas = new Panel();
+            panelCanvas.AutoScroll = true;
+            panelCanvas.Location = picCanvas.Location;
+            panelCanvas.Size = picCanvas.Size;
+            panelCanvas.BorderStyle = BorderStyle.FixedSingle;
+
+            picCanvas.Location = new Point(0, 0);
+            picCanvas.BorderStyle = BorderStyle.None;
+            picCanvas.SizeMode = PictureBoxSizeMode.StretchImage;
+
+            this.Controls.Remove(picCanvas);
+            panelCanvas.Controls.Add(picCanvas);
+            this.Controls.Add(panelCanvas);
+
+            // 확대/축소 마우스 휠 이벤트
+            picCanvas.MouseWheel += PicCanvas_MouseWheel;
+
+            ApplyZoom();
+        }
+
+        private Point GetImagePoint(Point pt)
+        {
+            if (canvasBitmap == null) return pt;
+            return new Point((int)(pt.X / zoomFactor), (int)(pt.Y / zoomFactor));
+        }
+
+        private void ApplyZoom()
+        {
+            if (canvasBitmap != null)
+            {
+                picCanvas.Width = (int)(canvasBitmap.Width * zoomFactor);
+                picCanvas.Height = (int)(canvasBitmap.Height * zoomFactor);
+                picCanvas.Invalidate();
+            }
+        }
+
+        private void PicCanvas_MouseWheel(object sender, MouseEventArgs e)
+        {
+            if (Control.ModifierKeys == Keys.Control)
+            {
+                if (e.Delta > 0)
+                {
+                    zoomFactor += 0.1f;
+                }
+                else if (e.Delta < 0)
+                {
+                    zoomFactor -= 0.1f;
+                }
+
+                if (zoomFactor < 0.1f) zoomFactor = 0.1f;
+                if (zoomFactor > 10.0f) zoomFactor = 10.0f;
+
+                ApplyZoom();
+            }
         }
 
         private void PicCanvas_MouseDown(object sender, MouseEventArgs e)
         {
+            picCanvas.Focus();            // 휠 이벤트를 받기 위해 포커스 설정
             isDrawing = true;             // 드래그시작
-            startPoint = e.Location;      // 시작점저장
+            startPoint = GetImagePoint(e.Location);      // 시작점저장
         }
         private void PicCanvas_MouseMove(object sender, MouseEventArgs e)
         {
             if (!isDrawing) return;       // 그림그리기와상관없는마우스움직임은무시
-            endPoint = e.Location;        // 현재위치갱신
+            endPoint = GetImagePoint(e.Location);        // 현재위치갱신
                                           // picCanvas를다시그려라(Paint 이벤트를발생시킨다)
             picCanvas.Invalidate();       // 화면다시그리기(미리보기)        
         }
@@ -72,7 +134,7 @@ namespace SimplePaint
         {
             if (!isDrawing) return;     // 그림그리기와상관없는마우스움직임은무시
             isDrawing = false;          // 드래그종료
-            endPoint = e.Location;
+            endPoint = GetImagePoint(e.Location);
             // 실제비트맵에도형그리기(확정)
             using (Pen pen = new Pen(currentColor, currentLineWidth))
             {
@@ -87,6 +149,9 @@ namespace SimplePaint
             using (Pen previewPen = new Pen(currentColor, currentLineWidth))
             {
                 previewPen.DashStyle = DashStyle.Dash;
+
+                // 확대/축소 배율 적용하여 미리보기 그리기
+                e.Graphics.ScaleTransform(zoomFactor, zoomFactor);
                 DrawShape(e.Graphics, previewPen, startPoint, endPoint);
             }
         }
@@ -185,9 +250,33 @@ namespace SimplePaint
             }
         }
 
+        private void btnOpenFile_Click(object sender, EventArgs e)
+        {
+            using (OpenFileDialog openFileDialog = new OpenFileDialog())
+            {
+                openFileDialog.Filter = "Image Files|*.png;*.jpg;*.jpeg;*.bmp|All Files|*.*";
+                openFileDialog.Title = "Open an Image File";
+
+                if (openFileDialog.ShowDialog() == DialogResult.OK)
+                {
+                    using (Image loadedImage = Image.FromFile(openFileDialog.FileName))
+                    {
+                        // 새로운 캔버스로 설정
+                        canvasBitmap = new Bitmap(loadedImage);
+                        canvasGraphics = Graphics.FromImage(canvasBitmap);
+
+                        // 줌 초기화 및 캔버스 적용
+                        zoomFactor = 1.0f;
+                        picCanvas.Image = canvasBitmap;
+                        ApplyZoom();
+                    }
+                }
+            }
+        }
+
         private void Form1_Load(object sender, EventArgs e)
         {
-
+            this.Text += " (Ctrl + MouseWheel to Zoom)";
         }
     }
 }
